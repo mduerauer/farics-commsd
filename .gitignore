@@ -31,3 +31,5 @@ stamp-h1
 *.lo
 *.gcno
 *.gcda
+
+src/bin/commsd
