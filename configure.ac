@@ -3,7 +3,7 @@
 
 AC_PREREQ([2.69])
 AC_INIT([farics-commsd], [0.1], [markus.duerauer@feuerwehr.gv.at])
-AC_CONFIG_SRCDIR([src/bin/main.c])
+AC_CONFIG_SRCDIR([src/bin/commsd.c])
 AC_CONFIG_HEADERS([config.h])
 AM_INIT_AUTOMAKE
 PKG_PROG_PKG_CONFIG
