@@ -42,8 +42,9 @@ int main(int argc, char const *const *argv)
 {
   int fd;
   char const *messagebody;
+  void *status;
 
-  messagebody = argv[1];
+  messagebody = "test1234"; //argv[1];
 
   amqp_init();
 
@@ -55,39 +56,65 @@ int main(int argc, char const *const *argv)
   }
 
   set_serial_attrs(fd, serial_baudrate, 0, 20);
-
   if(pthread_create(&serial_read_thr, NULL, &serial_reader_thread, (void *)&fd)) {
     fprintf(stderr, "Error creating thread\n");
     return 1;
   }
 
-  /* wait for the second thread to finish */
-  if(pthread_join(serial_read_thr, NULL)) {
+  if(pthread_join(serial_read_thr, &status)) {
     fprintf(stderr, "Error joining thread\n");
     return 2;
   }
 
   amqp_publish(messagebody);
   amqp_close();
-
+  
   close(fd);
-
   return 0;
 }
 
 void *serial_reader_thread(void *parameters) {
 
   char read_buf[MAX_STR_LEN];
-  int loop,fd;
+  int loop,fd,pos;
+  ssize_t len;
 
   loop = 1;
   fd = *((int*)parameters);
+  pos = 0;
+  memset(read_buf, 0, MAX_STR_LEN);
 
-  while(loop<10) {
-    printf(".\n");
-    sleep(1);
-    loop++;
+  while(loop)
+  {
+    // Read characters
+    while(pos < MAX_STR_LEN)
+    {
+      len = read(fd, read_buf+pos, 1);
+      if(read_buf[pos]  == '\n' || read_buf[pos] == '\r')
+      {
+        break;
+      }
+
+      if(len > 0)
+        pos++;
+      else
+        usleep(200);
+    }
+    // Terminate string
+    read_buf[pos] = '\0';
+
+    // Ignore empty lines
+    if(pos > 0) {
+      printf("pos: %d - data: %s\n", pos, read_buf);
+    } else {
+      //printf("got empty line\n");
+    }
+
+    pos = 0;
+    memset(read_buf, 0, MAX_STR_LEN);
   }
+
+  pthread_exit(0);
 }
 
 void amqp_init()
