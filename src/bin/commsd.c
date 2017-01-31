@@ -41,11 +41,10 @@ pthread_t serial_write_thr;
 int main(int argc, char const *const *argv)
 {
   int fd;
-  char const *messagebody;
   void *status;
-
-  messagebody = "test1234"; //argv[1];
-
+  char const *dev_init = "ATZ\r";
+  char const *dev_init2 = "AT+CTSP=2,0,0\r";
+  char const *dev_init3 = "AT+CTSP=1,1,11\r";
   amqp_init();
 
   fd = open(serial_interface, O_RDWR | O_NOCTTY); 
@@ -61,12 +60,19 @@ int main(int argc, char const *const *argv)
     return 1;
   }
 
+  printf("Initializing ME\n");
+  write(fd, dev_init, strlen(dev_init));
+  usleep(1000);
+  write(fd, dev_init2, strlen(dev_init2));
+  usleep(1000);
+  write(fd, dev_init3, strlen(dev_init3));
+
+
   if(pthread_join(serial_read_thr, &status)) {
     fprintf(stderr, "Error joining thread\n");
     return 2;
   }
 
-  amqp_publish(messagebody);
   amqp_close();
   
   close(fd);
@@ -106,6 +112,7 @@ void *serial_reader_thread(void *parameters) {
     // Ignore empty lines
     if(pos > 0) {
       printf("pos: %d - data: %s\n", pos, read_buf);
+      amqp_publish(read_buf);
     } else {
       //printf("got empty line\n");
     }
