@@ -5,7 +5,7 @@ AM_CFLAGS += $(SQLITE3_CFLAGS)
 AM_CFLAGS += $(RABBITMQ_CFLAGS)
 
 bin_PROGRAMS = commsd
-commsd_SOURCES = commsd.c commsd.h utils.h utils.c
+commsd_SOURCES = commsd.c commsd.h utils.h utils.c pei.h
 
 commsd_LDADD = $(AM_LDFLAGS)
 commsd_LDADD += $(GLIB_LIBS)

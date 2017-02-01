@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <errno.h>
 
 #include <pthread.h>
@@ -10,12 +11,15 @@
 #include <fcntl.h>
 #include <unistd.h> 
 
+#include <sys/queue.h>
+
 #include <amqp_tcp_socket.h>
 #include <amqp.h>
 #include <amqp_framing.h>
 
 #include "utils.h"
 #include "commsd.h"
+#include "pei.h"
 
 int amqp_channel_max = 0;
 int amqp_frame_max = 131072;
@@ -42,9 +46,9 @@ int main(int argc, char const *const *argv)
 {
   int fd;
   void *status;
-  char const *dev_init = "ATZ\r";
-  char const *dev_init2 = "AT+CTSP=2,0,0\r";
-  char const *dev_init3 = "AT+CTSP=1,1,11\r";
+  char const *dev_init = "ATZ\r\n";
+  char const *dev_init2 = "AT+CTSP=2,0,0\r\n";
+  char const *dev_init3 = "AT+CTSP=1,1,11\r\n";
   amqp_init();
 
   fd = open(serial_interface, O_RDWR | O_NOCTTY); 
@@ -54,22 +58,30 @@ int main(int argc, char const *const *argv)
     exit(-1); 
   }
 
+  // Initialize serial port
   set_serial_attrs(fd, serial_baudrate, 0, 20);
+
+  // Create reader tread
   if(pthread_create(&serial_read_thr, NULL, &serial_reader_thread, (void *)&fd)) {
-    fprintf(stderr, "Error creating thread\n");
+    fprintf(stderr, "Error creating reader thread\n");
     return 1;
   }
 
-  printf("Initializing ME\n");
-  write(fd, dev_init, strlen(dev_init));
-  usleep(1000);
-  write(fd, dev_init2, strlen(dev_init2));
-  usleep(1000);
-  write(fd, dev_init3, strlen(dev_init3));
+  // Create console tread
+  if(pthread_create(&serial_write_thr, NULL, &serial_console_thread, (void *)&fd)) {
+    fprintf(stderr, "Error creating console thread\n");
+    return 1;
+  }
 
-
+  // Join reader tread
   if(pthread_join(serial_read_thr, &status)) {
-    fprintf(stderr, "Error joining thread\n");
+    fprintf(stderr, "Error joining reader thread\n");
+    return 2;
+  }
+
+  // Join console tread
+  if(pthread_join(serial_write_thr, &status)) {
+    fprintf(stderr, "Error joining console thread\n");
     return 2;
   }
 
@@ -78,6 +90,30 @@ int main(int argc, char const *const *argv)
   close(fd);
   return 0;
 }
+
+void *serial_console_thread(void *parameters) {
+  char read_buf[MAX_STR_LEN];
+  int fd,loop,len;
+
+
+  loop = 1;
+  fd = *((int*)parameters);
+  while(loop)
+  {
+    memset(read_buf, 0, MAX_STR_LEN);
+    len = scanf("%s", read_buf);
+    if(len == -1)
+    {
+       fprintf(stderr, "Error joining console thread\n");
+       pthread_exit(4);
+    }
+    write(fd, read_buf, strlen(read_buf));
+    write(fd, CRLF, strlen(CRLF));
+  }
+
+  pthread_exit(0);
+}
+
 
 void *serial_reader_thread(void *parameters) {
 
@@ -106,13 +142,13 @@ void *serial_reader_thread(void *parameters) {
       else
         usleep(200);
     }
+
     // Terminate string
     read_buf[pos] = '\0';
 
     // Ignore empty lines
     if(pos > 0) {
-      printf("pos: %d - data: %s\n", pos, read_buf);
-      amqp_publish(read_buf);
+	process_serial_input(read_buf);
     } else {
       //printf("got empty line\n");
     }
@@ -122,6 +158,26 @@ void *serial_reader_thread(void *parameters) {
   }
 
   pthread_exit(0);
+}
+
+void process_serial_input(const char *line)
+{
+  char helper_str[MAX_STR_LEN];
+  int err_num = 0;
+
+  memset(helper_str, '\0', sizeof(helper_str));
+
+  if(!strncmp(line,PEI_OK, strlen(PEI_OK)))
+  {
+     printf("OK received.\n"); 
+  }
+  else if(!strncmp(line,PEI_ERR, strlen(PEI_ERR-2))) {
+     sscanf(line, PEI_ERR, &err_num);
+
+     printf("ERROR %d received.\n", err_num);
+  }
+  printf("%s\n", line);
+  amqp_publish(line);
 }
 
 void amqp_init()
